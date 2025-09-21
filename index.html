@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QR Sheet Maker — A4, 4-inch Tiles</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root{
+      --page-w: 8.27in; /* A4 width */
+      --page-h: 11.69in; /* A4 height */
+      --pad: 0.10in;     /* page padding */
+      --gap: 0.06in;     /* slightly larger gap for easy cutting */
+      --img-size: 4in;   /* default image size */
+      --header-h: 0.50in;/* per-item header height */
+    }
+    html, body { height: 100%; }
+    body { font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: #0f172a; }
+    /* Page for screen preview */
+    .page {
+      width: var(--page-w);
+      height: var(--page-h);
+      background: white;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      border-radius: 10px;
+      position: relative;
+      overflow: hidden;
+      /* scale down on small screens via container rules below */
+    }
+    /* Printable area respects exact inches */
+    @media print {
+      @page { size: A4 portrait; margin: 0; }
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      body { background: white !important; }
+      .no-print { display: none !important; }
+      .print-wrap { margin: 0; padding: 0; width: auto; }
+      .page {
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        page-break-after: always;
+        transform: none !important; /* remove preview scaling for true size */
+      }
+      .page:last-child { page-break-after: auto; }
+    }
+
+    /* Grid inside page (exact inches) */
+    .page-inner {
+      position: absolute;
+      inset: var(--pad);
+      display: grid;
+      grid-template-columns: repeat(var(--cols, 2), var(--img-size)); /* dynamic columns */
+      grid-auto-rows: calc(var(--header-h) + var(--img-size));
+      column-gap: var(--gap);
+      row-gap: var(--gap);
+      align-content: start;
+      justify-content: start;
+      /* ensure no overflow due to rounding */
+      overflow: hidden;
+      print-color-adjust: exact; -webkit-print-color-adjust: exact; /* keep colors */
+    }
+
+    /* When corner-fit is enabled, tiles stretch from edge to edge
+       while keeping even spacing between and touching page sides */
+    .page-inner.corner-fit {
+      inset: var(--pad); /* light safety margin to avoid printer non-printable area */
+      justify-content: space-between;
+      align-content: space-between;
+      print-color-adjust: exact; -webkit-print-color-adjust: exact;
+    }
+
+    .tile {
+      width: var(--img-size);
+      height: calc(var(--header-h) + var(--img-size));
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .tile-header {
+      height: var(--header-h);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 0.15in;
+      background: linear-gradient(135deg, #0ea5e9, #6366f1);
+      color: white;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      text-align: center;
+      /* subtle curve only on top for elegance */
+    }
+
+    .tile-img-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: white;
+      padding: 0.1in;
+    }
+
+    .tile-img {
+      width: var(--img-size);
+      height: var(--img-size);
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+    }
+
+    /* Screen preview scaling container */
+    .preview-scale {
+      transform-origin: top left;
+    }
+
+    /* Simple tag style for counters/info */
+    .tag {
+      background: rgba(255,255,255,0.12);
+      color: #e2e8f0;
+      border: 1px solid rgba(255,255,255,0.15);
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body class="text-slate-100">
+  <div class="max-w-6xl mx-auto px-4 py-8">
+    <!-- Header -->
+    <header class="mb-6 no-print">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">QR Sheet Maker</h1>
+          <p class="text-slate-300 mt-1">A4, true size preview & print</p>
+        </div>
+        <div class="hidden sm:flex items-center gap-2">
+          <span class="tag">A4 Portrait</span>
+          <span class="tag">4-inch Tiles</span>
+          <span class="tag">Auto Pagination</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Controls -->
+    <section class="no-print bg-slate-800/60 border border-slate-700 rounded-xl p-5 mb-6">
+      <form id="controlForm" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="col-span-1 md:col-span-1">
+          <label class="block text-sm font-semibold mb-2">Hotel ka Naam</label>
+          <input id="hotelName" type="text" placeholder="Jaise: The Royal Orchid"
+                 class="w-full rounded-lg bg-slate-900/60 border border-slate-700 px-4 py-2.5 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                 required />
+        </div>
+
+        <div class="col-span-1 md:col-span-1">
+          <label class="block text-sm font-semibold mb-2">Image Size (inches)</label>
+          <div class="flex items-center gap-2">
+            <input id="imgSize" type="number" min="1" max="6" step="0.1" value="4"
+                   class="w-28 rounded-lg bg-slate-900/60 border border-slate-700 px-3 py-2.5 text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500" />
+            <span class="text-slate-400 text-sm">in</span>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">Default 4". Zarurat ke hisaab se badal sakte hain.</p>
+        </div>
+
+        <div class="col-span-1 md:col-span-1">
+          <label class="block text-sm font-semibold mb-2">QR Images (Multiple)</label>
+          <input id="imageInput" type="file" accept="image/*" multiple
+                 class="w-full rounded-lg bg-slate-900/60 border border-slate-700 px-4 py-2.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500" />
+          <p class="text-xs text-slate-400 mt-1">Tip: Ek saath multiple images select kar sakte hain.</p>
+        </div>
+
+        <div class="col-span-1 md:col-span-1">
+          <label class="block text-sm font-semibold mb-2">Options</label>
+          <div class="flex flex-col gap-3">
+            <label class="inline-flex items-center gap-2 text-sm">
+              <input id="cornerFit" type="checkbox" class="accent-sky-500 w-4 h-4" />
+              <span>Images ko page corners ke saath align karo</span>
+            </label>
+            <div class="flex flex-wrap items-center gap-2">
+              <button id="generateBtn" class="px-4 py-2.5 rounded-lg bg-sky-500 hover:bg-sky-600 active:bg-sky-700 transition font-semibold">
+                Generate Pages
+              </button>
+              <button id="clearBtn" type="button" class="px-4 py-2.5 rounded-lg bg-slate-700 hover:bg-slate-600 transition">
+                Clear
+              </button>
+              <button id="printBtn" type="button" class="px-4 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 transition font-semibold">
+                Print / Save PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      </form>
+      <div class="mt-3 text-sm text-slate-300">
+        <span id="statusText">No images yet.</span>
+      </div>
+    </section>
+
+    <!-- Preview Pages -->
+    <section>
+      <div id="previewHost" class="print-wrap flex flex-col items-start gap-6 overflow-x-auto">
+        <!-- Pages will be injected here -->
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const form = document.getElementById('controlForm');
+    const hotelNameEl = document.getElementById('hotelName');
+    const imageInput = document.getElementById('imageInput');
+    const generateBtn = document.getElementById('generateBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const printBtn = document.getElementById('printBtn');
+    const previewHost = document.getElementById('previewHost');
+    const statusText = document.getElementById('statusText');
+
+    // Keep selected images in memory as data URLs
+    let images = [];
+
+    // Read files into data URLs
+    imageInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+
+      statusText.textContent = 'Loading images...';
+      const loaded = [];
+      for (const file of files) {
+        try {
+          const dataUrl = await fileToDataURL(file);
+          loaded.push({ id: cryptoRandomId(), name: file.name, src: dataUrl });
+        } catch (err) {
+          console.warn('Failed to load file', file.name, err);
+        }
+      }
+      images = images.concat(loaded);
+      statusText.textContent = `Selected: ${images.length} image${images.length>1?'s':''}. Click "Generate Pages".`;
+    });
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      buildPages();
+    });
+
+    generateBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      buildPages();
+    });
+
+    clearBtn.addEventListener('click', () => {
+      images = [];
+      imageInput.value = '';
+      previewHost.innerHTML = '';
+      statusText.textContent = 'Cleared. No images yet.';
+    });
+
+    printBtn.addEventListener('click', () => {
+      // Open native print dialog (user can save as PDF)
+      window.print();
+    });
+
+    function fileToDataURL(file) {
+      return new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = () => res(reader.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function cryptoRandomId() {
+      // Small unique ID
+      return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+        (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+      );
+    }
+
+    function buildPages() {
+      const hotelName = (hotelNameEl.value || '').trim();
+      if (!hotelName) {
+        alert('Please enter hotel name.');
+        hotelNameEl.focus();
+        return;
+      }
+      if (!images.length) {
+        alert('Please select at least one image.');
+        return;
+      }
+
+      // Layout columns depend on chosen size
+      const sizeIn = Math.max(1, Math.min(6, parseFloat(document.getElementById('imgSize').value || '4')));
+      // Update CSS var so tiles render at chosen inches
+      document.documentElement.style.setProperty('--img-size', sizeIn + 'in');
+
+      // Compute how many columns/rows fit based on chosen size
+      const pageInnerW = 8.27 - (0.10 * 2); // in
+      const pageInnerH = 11.69 - (0.10 * 2); // in
+      const headerH = 0.50; // in
+      const gap = 0.06; // in
+      const tileH = headerH + sizeIn; // in
+      const cols = Math.max(1, Math.floor((pageInnerW - 0.001 + gap) / (sizeIn + gap)));
+      const rows = Math.max(1, Math.floor((pageInnerH + gap) / (tileH + gap)));
+      const perPage = cols * rows;
+
+      previewHost.innerHTML = '';
+      const totalPages = Math.ceil(images.length / perPage);
+
+      for (let p = 0; p < totalPages; p++) {
+        const pageEl = document.createElement('div');
+        pageEl.className = 'page';
+
+        // Inner grid
+        const inner = document.createElement('div');
+        inner.className = 'page-inner';
+        // set columns per page via CSS var
+        inner.style.setProperty('--cols', String(cols));
+        if (document.getElementById('cornerFit').checked) {
+          inner.classList.add('corner-fit');
+          // distribute columns evenly to touch left/right within padding
+          inner.style.justifyContent = 'space-between';
+        } else {
+          inner.style.justifyContent = 'start';
+        }
+
+        const slice = images.slice(p * perPage, (p + 1) * perPage);
+        slice.forEach(item => {
+          inner.appendChild(makeTile(hotelName, item.src));
+        });
+
+        pageEl.appendChild(inner);
+        previewHost.appendChild(pageEl);
+      }
+
+      updateStatus();
+      scalePreviewToFit();
+    }
+
+    function makeTile(hotelName, src) {
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+
+      const head = document.createElement('div');
+      head.className = 'tile-header';
+      head.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="inline-flex w-2.5 h-2.5 rounded-full bg-white/90 shadow-[0_0_0_3px_rgba(255,255,255,0.25)]"></span>
+          <span>${escapeHtml(hotelName)}</span>
+        </div>
+      `;
+
+      const body = document.createElement('div');
+      body.className = 'tile-img-wrap';
+
+      const img = document.createElement('img');
+      img.className = 'tile-img';
+      img.alt = 'QR';
+      img.src = src;
+      img.onerror = function() {
+        this.src = '';
+        this.alt = 'Image failed to load';
+        this.style.display = 'none';
+        const fallback = document.createElementNS('http://www.w3.org/2000/svg','svg');
+        fallback.setAttribute('width','100%');
+        fallback.setAttribute('height','100%');
+        fallback.setAttribute('viewBox','0 0 200 200');
+        fallback.innerHTML = `
+          <rect x="0" y="0" width="200" height="200" fill="#f1f5f9"/>
+          <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-size="14" font-family="Inter, Arial">Image not available</text>
+        `;
+        body.appendChild(fallback);
+      };
+
+      body.appendChild(img);
+      tile.appendChild(head);
+      tile.appendChild(body);
+      return tile;
+    }
+
+    function updateStatus() {
+      const pages = previewHost.querySelectorAll('.page').length;
+      const tiles = images.length;
+      statusText.textContent = `Ready: ${tiles} image${tiles>1?'s':''}, ${pages} page${pages>1?'s':''}. Use "Print / Save PDF".`;
+    }
+
+    // Keep preview nicely visible on screen
+    function scalePreviewToFit() {
+      // If container narrower than A4 width, scale pages down
+      const margin = 32; // px
+      const hostRect = previewHost.getBoundingClientRect();
+      const maxWidth = hostRect.width - margin;
+      // A4 in pixels at 96dpi approx: width ~ 794px, height ~ 1123px, but our page is in inches; read computed width
+      const page = previewHost.querySelector('.page');
+      if (!page) return;
+
+      // Remove previous scale wrap if any
+      const pages = Array.from(previewHost.children);
+      pages.forEach(pg => {
+        pg.style.transform = '';
+        pg.style.transformOrigin = '';
+      });
+
+      const pageWidth = page.getBoundingClientRect().width;
+      if (pageWidth > maxWidth) {
+        const scale = Math.max(0.3, Math.min(1, maxWidth / pageWidth));
+        pages.forEach(pg => {
+          pg.style.transform = `scale(${scale})`;
+          pg.style.transformOrigin = 'top left';
+        });
+      }
+    }
+
+    // Utility: escape text to avoid issues in header
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, s => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      }[s]));
+    }
+
+    // Re-scale on resize
+    window.addEventListener('resize', () => {
+      scalePreviewToFit();
+    });
+  </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'982815e370b8859c',t:'MTc1ODQ0MjIyMC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
